@@ -1,0 +1,45 @@
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: recall
+      POSTGRES_PASSWORD: recall
+      POSTGRES_DB: recall
+    ports:
+      - "5433:5432"   # 5433 on the host so it doesn't clash with a local Postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U recall"]
+      interval: 2s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+
+  api:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql://recall:recall@db:5432/recall
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/app:/srv/app
+      - ./backend/scripts:/srv/scripts
+      - ./backend/eval:/srv/eval
+      - ./backend/tests:/srv/tests
+      - repos:/data/repos
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/srv/app"]
+
+volumes:
+  pgdata:
+  repos:
